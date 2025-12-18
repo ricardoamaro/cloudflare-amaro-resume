@@ -2,97 +2,113 @@
 
 **Live:** https://resume.amaro.com.pt
 
-A Cloudflare Worker serving an ATS-friendly resume (Spearmint layout) directly from the edge.
+A Cloudflare Worker serving an ATS-friendly resume directly from the edge. This project demonstrates edge-native architecture patterns for migrating legacy monolith content to a modern serverless platform.
+
+## Current State
+
+| Milestone | Status |
+|-----------|--------|
+| DNS Migration (`amaro.com.pt`) | ✓ Complete |
+| SSL/TLS (Full Strict) | ✓ Active |
+| WAF (AI Bot Protection) | ✓ Enabled |
+| Worker Deployment | ✓ Live |
+| Hyperdrive + Tunnel | Planned |
 
 ## Architecture
 
-| Component | Details |
-|-----------|---------|
+| Component | Configuration |
+|-----------|---------------|
 | DNS | Cloudflare (Free Tier) |
 | Compute | Cloudflare Workers (V8 Isolate) |
 | SSL | Full (Strict) |
+| WAF | Custom Rule: Block AI Scrapers |
 | Tunnel | Cloudflare Tunnel (Zero Trust) |
 
-### Future State: Secure Database Connection
+### Target Architecture: Private Database Access
 
-Using Cloudflare Tunnel + Hyperdrive to connect to a private MySQL database without exposing it to the internet:
+The production configuration uses Cloudflare Tunnel + Hyperdrive to connect to a private MySQL database without public exposure:
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Internet
         User["User"]
     end
 
-    subgraph Cloudflare["Cloudflare Edge"]
-        Worker["Worker\n(resume.amaro.com.pt)"]
-        Access["Access\n(Zero Trust)"]
-        HD["Hyperdrive\n(Connection Pool)"]
+    subgraph Edge["Cloudflare Edge (Global)"]
+        Worker["Worker<br/>resume.amaro.com.pt"]
+        WAF["WAF<br/>AI Bot Block"]
+        HD["Hyperdrive<br/>Connection Pool"]
+        Access["Access<br/>Zero Trust"]
     end
 
     subgraph Private["Private Network (Lisbon)"]
-        Tunnel["cloudflared\n(Tunnel Connector)"]
-        DB[("MySQL/MariaDB\nDrupal Database")]
+        Tunnel["cloudflared<br/>Outbound Tunnel"]
+        DB[("MariaDB<br/>Drupal Database")]
     end
 
-    User -->|HTTPS| Worker
+    User -->|HTTPS| WAF
+    WAF --> Worker
     Worker --> HD
     HD --> Access
-    Access <-->|Encrypted Tunnel| Tunnel
+    Access <-->|Encrypted| Tunnel
     Tunnel --> DB
 ```
 
-**Benefits:**
-- Database never exposed to the public internet
-- Connection pooling reduces latency from edge locations
-- Zero Trust access policies via Cloudflare Access
-- All traffic encrypted end-to-end
+**Design Decisions:**
+- Database remains on private network (no public IP exposure)
+- Connection pooling via Hyperdrive reduces cold-start latency
+- Zero Trust policies restrict tunnel access to Hyperdrive service tokens
+- WAF blocks known AI scraper user agents at the edge
 
 ---
 
 ## Implementation
 
-### Step 1: DNS Setup
+### Phase 1: DNS Migration
 
-Move nameservers to Cloudflare:
+Migrated `amaro.com.pt` nameservers to Cloudflare:
 
-- Set SSL mode to `Full (Strict)` to prevent redirect loops with existing backends
-- Import existing `A` and `MX` records for zero downtime
+```
+Primary NS:   art.ns.cloudflare.com
+Secondary NS: ella.ns.cloudflare.com
+```
 
-### Step 2: Initialize Worker
+Configuration:
+- SSL mode set to `Full (Strict)` to prevent redirect loops with origin
+- Imported existing `A` and `MX` records (zero-downtime migration)
+- Proxied status enabled for edge caching
+
+### Phase 2: Security Hardening
+
+Added WAF rule to block AI training scrapers:
+
+**Dashboard:** Security → WAF → Custom Rules
+
+```
+Rule: Block AI Bots
+Expression: (cf.client.bot) or (http.user_agent contains "GPTBot") or 
+            (http.user_agent contains "ChatGPT") or 
+            (http.user_agent contains "anthropic")
+Action: Block
+```
+
+### Phase 3: Worker Deployment
+
+Initialize and deploy:
 
 ```bash
-# Install CLI
 npm install -g wrangler
-
-# Authenticate
 wrangler login
-
-# Create project
 npm create cloudflare@latest amaro-resume
-# Template: "Hello World"
-# Type: Worker
-# Language: JavaScript
 ```
 
-The Worker (`src/index.js`) returns server-rendered HTML using a single-column layout for ATS compatibility.
+The Worker (`src/index.js`) implements a layered architecture:
+- **Data Layer:** Hybrid strategy supporting both Hyperdrive (production) and mock data (development)
+- **Presentation Layer:** Server-rendered HTML with Spearmint resume template
 
-### Step 3: Deploy
+### Phase 4: Custom Domain
 
-```bash
-npx wrangler deploy
-```
-
-Output:
-```
-Total Upload: 0.19 KiB / gzip: 0.16 KiB
-Uploaded amaro-resume (5.53 sec)
-Deployed amaro-resume triggers (4.84 sec)
-  https://amaro-resume.ricardoamaropt.workers.dev
-```
-
-### Step 4: Custom Domain
-
-Add to `wrangler.jsonc`:
+Add route configuration to `wrangler.jsonc`:
 
 ```jsonc
 "routes": [
@@ -191,12 +207,20 @@ npx wrangler deploy
 
 ## Security Roadmap: Zero Trust Database Access
 
-Following Cloudflare best practices (and advice from the team), the production iteration of this project moves beyond IP Allowlisting to a **Zero Trust** model using **Cloudflare Tunnel**.
+The production implementation follows Cloudflare's Zero Trust model, eliminating IP allowlisting in favor of identity-based access control.
 
-### The "Magic" Architecture
+### Architecture Rationale
 
-Instead of exposing port 3306 on the legacy firewall, we utilize `cloudflared` to create a private, outbound-only tunnel.
+Traditional database access requires exposing port 3306 and maintaining IP allowlists—a pattern that scales poorly and introduces operational overhead. The Tunnel approach inverts this model:
 
-1. **Legacy Host:** Runs `cloudflared` daemon (Connector).
-2. **Tunnel:** Establishes a secure connection to Cloudflare Edge (`tunnel.ricardoamaro.com`).
-3. **Hyperdrive:** Connects internally to the Tunnel, treating the remote DB as if it were local.
+| Traditional | Zero Trust |
+|-------------|------------|
+| Inbound firewall rules | Outbound-only connections |
+| IP allowlist management | Identity-based policies |
+| Public endpoint exposure | Private tunnel ingress |
+
+### Implementation
+
+1. **Connector:** `cloudflared` daemon on database host establishes outbound tunnel
+2. **Edge:** Cloudflare terminates tunnel, applies Access policies
+3. **Hyperdrive:** Connection pooling to tunnel hostname as internal endpoint

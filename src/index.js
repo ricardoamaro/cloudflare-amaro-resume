@@ -1,9 +1,68 @@
-// MySQL client for Hyperdrive (install: npm i mysql2)
+// MySQL client for Hyperdrive (Uncomment when Tunnel is active)
 // import mysql from 'mysql2/promise';
+
+export default {
+  async fetch(request, env, ctx) {
+    let dbData;
+
+    // ---------------------------------------------------------
+    // 1. DATA LAYER: Hybrid Strategy (Hyperdrive + Tunnel)
+    // ---------------------------------------------------------
+    
+    // Check if Hyperdrive binding exists (Production environment)
+    if (env.HYPERDRIVE) {
+      try {
+        // PRODUCTION: Connect via Hyperdrive -> Cloudflare Tunnel -> Private DB
+        // const connection = await mysql.createConnection(env.HYPERDRIVE.connectionString);
+        
+        // const [nodes] = await connection.execute(
+        //   `SELECT COUNT(nid) as total FROM node_field_data WHERE status = 1`
+        // );
+        // const [latest] = await connection.execute(
+        //   `SELECT title FROM node_field_data WHERE status = 1 ORDER BY created DESC LIMIT 1`
+        // );
+        // const [version] = await connection.execute(`SELECT VERSION() as version`);
+        // 
+        // dbData = {
+        //   status: "Online (Tunnel)",
+        //   latency: "18ms", // Hyperdrive caching makes this fast
+        //   total_nodes: nodes[0].total,
+        //   featured_article: latest[0].title,
+        //   db_version: version[0].version,
+        //   source: "Hyperdrive → Tunnel → MySQL"
+        // };
+        // await connection.end();
+
+        // Fallback for Demo purposes (if Tunnel isn't active yet)
+        dbData = await getMockData();
+
+      } catch (error) {
+        console.error('Database error:', error);
+        dbData = { status: "Error", error: error.message };
+      }
+    } else {
+      // DEVELOPMENT: Use Mock Data
+      dbData = await getMockData();
+    }
+
+    // ---------------------------------------------------------
+    // 2. PRESENTATION LAYER: Render HTML
+    // ---------------------------------------------------------
+    const html = generateResumeHTML(dbData);
+
+    return new Response(html, {
+      headers: { 'content-type': 'text/html' },
+    });
+  },
+};
+
+// ---------------------------------------------------------
+// HELPER FUNCTIONS
+// ---------------------------------------------------------
 
 // Mock data for development/demo
 async function getMockData() {
-  await new Promise(r => setTimeout(r, 15)); // Simulate latency
+  await new Promise(r => setTimeout(r, 15)); // Simulate network latency
   return {
     status: "Online",
     latency: "~15ms",
@@ -14,50 +73,9 @@ async function getMockData() {
   };
 }
 
-export default {
-  async fetch(request, env, ctx) {
-    let dbData;
-
-    // Check if Hyperdrive binding exists (production with tunnel)
-    if (env.HYPERDRIVE) {
-      try {
-        // Connect via Hyperdrive (connection pooled through Cloudflare Tunnel)
-        // const connection = await mysql.createConnection(env.HYPERDRIVE.connectionString);
-        // 
-        // const [nodes] = await connection.execute(
-        //   `SELECT COUNT(nid) as total FROM node_field_data WHERE status = 1`
-        // );
-        // 
-        // const [latest] = await connection.execute(
-        //   `SELECT title FROM node_field_data WHERE status = 1 ORDER BY created DESC LIMIT 1`
-        // );
-        // 
-        // const [version] = await connection.execute(`SELECT VERSION() as version`);
-        // 
-        // dbData = {
-        //   status: "Online",
-        //   latency: "~15ms",
-        //   total_nodes: nodes[0].total,
-        //   featured_article: latest[0].title,
-        //   db_version: version[0].version,
-        //   source: "Hyperdrive → Tunnel → MySQL"
-        // };
-        // 
-        // await connection.end();
-
-        // Fallback to mock until Hyperdrive is configured
-        dbData = await getMockData();
-      } catch (error) {
-        console.error('Database error:', error);
-        dbData = { status: "Error", error: error.message };
-      }
-    } else {
-      // Development mode: use mock data
-      dbData = await getMockData();
-    }
-
-    // Render the resume HTML
-    const html = `
+// Template Generator (Separated for readability)
+function generateResumeHTML(dbData) {
+  return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -127,9 +145,9 @@ export default {
         <div class="role">Senior Engineering Manager | Platform Strategy</div>
         <div style="font-size: 14px; color: #555;">
           Lisbon, Portugal • 
-					<a href="https://ricardoamaro.com" style="color:#f6821f; text-decoration:none;">ricardoamaro.com</a> • 
-					<a href="https://github.com/ricardoamaro" style="color:#f6821f; text-decoration:none;">github.com/ricardoamaro</a> • 
-					<a href="https://www.linkedin.com/in/ricardoamaro" style="color:#f6821f; text-decoration:none;">linkedin.com/in/ricardoamaro</a> • [Email] 
+          <a href="https://ricardoamaro.com" style="color:#f6821f; text-decoration:none;">ricardoamaro.com</a> • 
+          <a href="https://github.com/ricardoamaro" style="color:#f6821f; text-decoration:none;">github.com/ricardoamaro</a> • 
+          <a href="https://www.linkedin.com/in/ricardoamaro" style="color:#f6821f; text-decoration:none;">linkedin.com/in/ricardoamaro</a> • [Email] 
         </div>
       </header>
 
@@ -138,7 +156,7 @@ export default {
         Scholar-Practitioner bridging the gap between Core Platform engineering and Product velocity. 
         Experienced in managing high-scale infrastructure (22k+ nodes) and leading engineering teams 
         through legacy-to-modern migrations. 
-				Combining technical depth in Cloud-Native systems (Kubernetes, Terraform, IAM/RBAC) with the strategic leadership required to scale distributed teams and drive cross-departmental standardization.
+        Combining technical depth in Cloud-Native systems (Kubernetes, Terraform, IAM/RBAC) with the strategic leadership required to scale distributed teams and drive cross-departmental standardization.
       </p>
 
       <h2>Experience</h2>
@@ -330,10 +348,5 @@ export default {
 
     </body>
     </html>
-    `;
-
-    return new Response(html, {
-      headers: { 'content-type': 'text/html' },
-    });
-  },
-};
+  `;
+}
