@@ -1,8 +1,10 @@
 # Cloudflare Resume
 
-**Live:** https://resume.amaro.com.pt
+**Live:** [https://resume.amaro.com.pt](https://resume.amaro.com.pt)
 
-A Cloudflare Worker serving an ATS-friendly resume directly from the edge. This project demonstrates edge-native architecture patterns for migrating legacy monolith content to a modern serverless platform.
+A Cloudflare Worker serving an ATS-friendly resume directly from the edge.
+This project demonstrates edge-native architecture patterns for migrating
+legacy monolith content to a modern serverless platform.
 
 ## Current State
 
@@ -26,7 +28,8 @@ A Cloudflare Worker serving an ATS-friendly resume directly from the edge. This 
 
 ### Target Architecture: Private Database Access
 
-The production configuration uses Cloudflare Tunnel + Hyperdrive to connect to a private MySQL database without public exposure:
+The production configuration uses Cloudflare Tunnel + Hyperdrive to connect
+to a private MySQL database without public exposure:
 
 ```mermaid
 flowchart TB
@@ -55,6 +58,7 @@ flowchart TB
 ```
 
 **Design Decisions:**
+
 - Database remains on private network (no public IP exposure)
 - Connection pooling via Hyperdrive reduces cold-start latency
 - Zero Trust policies restrict tunnel access to Hyperdrive service tokens
@@ -68,29 +72,58 @@ flowchart TB
 
 Migrated `amaro.com.pt` nameservers to Cloudflare:
 
-```
+```text
 Primary NS:   jonah.ns.cloudflare.com
 Secondary NS: lola.ns.cloudflare.com
 ```
 
 Configuration:
+
 - SSL mode set to `Full (Strict)` to prevent redirect loops with origin
 - Imported existing `A` and `MX` records (zero-downtime migration)
 - Proxied status enabled for edge caching
 
 ### Phase 2: Security Hardening
 
-Added WAF rule to block AI training scrapers:
+Implemented a **Defense-in-Depth** strategy to prevent unauthorized LLM
+training on personal research data, utilizing Cloudflare's Bot controls.
 
-**Dashboard:** Security → WAF → Custom Rules
+#### 1. Managed Protection (Layer 7)
 
+- **Dashboard:** Security → Bots
+- **Action:** Enabled **"Block AI bots"**.
+- **Effect:** Automatically blocks verified AI crawlers including `GPTBot`
+  (OpenAI), `ClaudeBot` (Anthropic), `Bytespider` (ByteDance/TikTok),
+  and `CCBot` (Common Crawl).
+
+#### 2. Bot Fight Mode (Behavioral Analysis)
+
+- **Dashboard:** Security → Bots → Bot Fight Mode
+- **Action:** Enabled.
+- **Effect:** Injects JavaScript challenges to detect and block simple
+  script-based scrapers that don't execute JS.
+
+#### 3. Custom WAF Rule (Explicit Deny)
+
+While the managed rule covers verified bots, I added a custom WAF rule to
+explicitly drop connections from aggressive scrapers based on User-Agent
+strings, ensuring coverage even if the managed rule updates are delayed.
+
+- **Rule Name:** `Block AI Scrapers`
+- **Action:** `Block`
+- **Expression:**
+
+```sql
+(http.user_agent contains "Bytespider") or
+(http.user_agent contains "GPTBot") or
+(http.user_agent contains "ClaudeBot") or
+(http.user_agent contains "Omgilibot") or
+(http.user_agent contains "FacebookBot")
 ```
-Rule: Block AI Bots
-Expression: (cf.client.bot) or (http.user_agent contains "GPTBot") or 
-            (http.user_agent contains "ChatGPT") or 
-            (http.user_agent contains "anthropic")
-Action: Block
-```
+
+> **Rationale:** Targets specific AI training bots while preserving SEO
+> crawlers (Googlebot, Bingbot) and social preview fetchers. We avoid
+> `(cf.client.bot)` which would indiscriminately block legitimate indexing.
 
 ### Phase 3: Worker Deployment
 
@@ -103,8 +136,11 @@ npm create cloudflare@latest amaro-resume
 ```
 
 The Worker (`src/index.js`) implements a layered architecture:
-- **Data Layer:** Hybrid strategy supporting both Hyperdrive (production) and mock data (development)
-- **Presentation Layer:** Server-rendered HTML with Spearmint resume template
+
+- **Data Layer:** Hybrid strategy supporting both Hyperdrive (production)
+  and mock data (development)
+- **Presentation Layer:** Server-rendered HTML with Spearmint resume
+  template
 
 ### Phase 4: Custom Domain
 
@@ -131,15 +167,18 @@ Securely connect to a private MySQL database without exposing it to the internet
 
 ### 1. Create Cloudflare Tunnel
 
-In [Cloudflare One](https://one.dash.cloudflare.com/) → Networks → Tunnels:
+In [Cloudflare One](https://one.dash.cloudflare.com/) → Networks →
+Tunnels:
 
 ```bash
 # Install cloudflared on your database server
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+  -o cloudflared
 chmod +x cloudflared
 
 # Authenticate and create tunnel
 ./cloudflared tunnel login
+./cloudflared tunnel create drupal-db-tunnel
 ./cloudflared tunnel create drupal-db-tunnel
 ```
 
@@ -171,7 +210,9 @@ npx wrangler hyperdrive create drupal-link \
 
 ### 3. Configure Access Policy
 
-In Cloudflare One → Access → Applications, create an application for `db-tunnel.amaro.com.pt` with a Service Auth policy to restrict access to Hyperdrive only.
+In Cloudflare One → Access → Applications, create an application for
+`db-tunnel.amaro.com.pt` with a Service Auth policy to restrict access to
+Hyperdrive only.
 
 ### 4. Add Worker Binding
 
@@ -207,13 +248,18 @@ npx wrangler deploy
 
 ## Security Roadmap: Zero Trust Database Access
 
-The production implementation follows Cloudflare's Zero Trust model, eliminating IP allowlisting in favor of identity-based access control. Based on [Hyperdrive: Connect to a Private Database](https://developers.cloudflare.com/hyperdrive/configuration/connect-to-private-database/).
+The production implementation follows Cloudflare's Zero Trust model,
+eliminating IP allowlisting in favor of identity-based access control.
+Based on [Hyperdrive: Connect to a Private Database](
+https://developers.cloudflare.com/hyperdrive/configuration/connect-to-private-database/).
 
 ![Hyperdrive Private Database Architecture](https://developers.cloudflare.com/_astro/hyperdrive-private-database-architecture.BrGTjEln_2iaw6y.webp)
 
 ### Architecture Rationale
 
-Traditional database access requires exposing port 3306 and maintaining IP allowlists—a pattern that scales poorly and introduces operational overhead. The Tunnel approach inverts this model:
+Traditional database access requires exposing port 3306 and maintaining IP
+allowlists—a pattern that scales poorly and introduces operational overhead.
+The Tunnel approach inverts this model:
 
 | Traditional | Zero Trust |
 |-------------|------------|
@@ -221,8 +267,10 @@ Traditional database access requires exposing port 3306 and maintaining IP allow
 | IP allowlist management | Identity-based policies |
 | Public endpoint exposure | Private tunnel ingress |
 
-### Implementation
+### Implementation Details
 
-1. **Connector:** `cloudflared` daemon on database host establishes outbound tunnel
+1. **Connector:** `cloudflared` daemon on database host establishes
+   outbound tunnel
 2. **Edge:** Cloudflare terminates tunnel, applies Access policies
-3. **Hyperdrive:** Connection pooling to tunnel hostname as internal endpoint
+3. **Hyperdrive:** Connection pooling to tunnel hostname as internal
+   endpoint
