@@ -20,18 +20,18 @@ Using Cloudflare Tunnel + Hyperdrive to connect to a private MySQL database with
 ```mermaid
 flowchart LR
     subgraph Internet
-        User["👤 User"]
+        User["User"]
     end
 
     subgraph Cloudflare["Cloudflare Edge"]
-        Worker["⚡ Worker\n(resume.amaro.com.pt)"]
-        Access["🔐 Access\n(Zero Trust)"]
-        HD["🚀 Hyperdrive\n(Connection Pool)"]
+        Worker["Worker\n(resume.amaro.com.pt)"]
+        Access["Access\n(Zero Trust)"]
+        HD["Hyperdrive\n(Connection Pool)"]
     end
 
     subgraph Private["Private Network (Lisbon)"]
-        Tunnel["🔒 cloudflared\n(Tunnel Connector)"]
-        DB[("🐬 MySQL/MariaDB\nDrupal Database")]
+        Tunnel["cloudflared\n(Tunnel Connector)"]
+        DB[("MySQL/MariaDB\nDrupal Database")]
     end
 
     User -->|HTTPS| Worker
@@ -186,3 +186,17 @@ npx wrangler dev
 # Deploy to production
 npx wrangler deploy
 ```
+
+---
+
+## Security Roadmap: Zero Trust Database Access
+
+Following Cloudflare best practices (and advice from the team), the production iteration of this project moves beyond IP Allowlisting to a **Zero Trust** model using **Cloudflare Tunnel**.
+
+### The "Magic" Architecture
+
+Instead of exposing port 3306 on the legacy firewall, we utilize `cloudflared` to create a private, outbound-only tunnel.
+
+1. **Legacy Host:** Runs `cloudflared` daemon (Connector).
+2. **Tunnel:** Establishes a secure connection to Cloudflare Edge (`tunnel.ricardoamaro.com`).
+3. **Hyperdrive:** Connects internally to the Tunnel, treating the remote DB as if it were local.

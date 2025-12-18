@@ -85,7 +85,7 @@ export default {
         li { margin-bottom: 6px; font-size: 14px; color: #444; }
         .tech-stack { font-size: 14px; color: #444; line-height: 1.8; }
         
-        /* THE DEMO FOOTER (The "Flex") */
+        /* Demo Footer */
         .demo-footer {
           margin-top: 60px;
           padding: 20px;
@@ -179,7 +179,7 @@ export default {
         <div class="company">ISCTE-IUL</div>
       </div>
 
-      <!-- Live Architecture Demo -->
+      <!-- Architecture Demo -->
       <div class="demo-footer">
         <span class="demo-badge">Edge Architecture</span>
         <p>
