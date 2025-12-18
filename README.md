@@ -69,8 +69,8 @@ flowchart TB
 Migrated `amaro.com.pt` nameservers to Cloudflare:
 
 ```
-Primary NS:   art.ns.cloudflare.com
-Secondary NS: ella.ns.cloudflare.com
+Primary NS:   jonah.ns.cloudflare.com
+Secondary NS: lola.ns.cloudflare.com
 ```
 
 Configuration:
