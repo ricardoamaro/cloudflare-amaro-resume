@@ -239,7 +239,43 @@ npm install
 # Start dev server
 npx wrangler dev
 # → http://localhost:8787
+```
 
+### Build & Deploy Lifecycle
+
+Use the Makefile for common tasks:
+
+```bash
+# Run all CI checks
+make ci
+
+# Deploy to Cloudflare
+make cd
+
+# Run full CI/CD pipeline
+make cicd
+```
+
+**CI Pipeline** (`make ci`) runs:
+
+- **test** — Execute Vitest suite in CI mode
+- **lint** — Markdownlint on README.md for formatting
+- **audit** — npm audit for vulnerable dependencies
+- **validate** — wrangler types to verify Worker configuration
+
+**Individual commands:**
+
+```bash
+make test      # Run tests
+make lint      # Lint markdown
+make audit     # Check dependencies
+make validate  # Build validation
+make cd        # Deploy to production
+```
+
+Or manually:
+
+```bash
 # Deploy to production
 npx wrangler deploy
 ```

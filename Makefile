@@ -1,4 +1,4 @@
-.PHONY: test lint ci cd cicd
+.PHONY: test lint audit validate ci cd cicd
 
 test:
 	CI=true npm test
@@ -6,7 +6,13 @@ test:
 lint:
 	markdownlint README.md
 
-ci: test lint
+audit:
+	npm audit --audit-level=moderate
+
+validate:
+	npx wrangler types > /dev/null
+
+ci: test lint audit validate
 	@echo "✓ CI passed"
 
 cd:
