@@ -207,7 +207,9 @@ npx wrangler deploy
 
 ## Security Roadmap: Zero Trust Database Access
 
-The production implementation follows Cloudflare's Zero Trust model, eliminating IP allowlisting in favor of identity-based access control.
+The production implementation follows Cloudflare's Zero Trust model, eliminating IP allowlisting in favor of identity-based access control. Based on [Hyperdrive: Connect to a Private Database](https://developers.cloudflare.com/hyperdrive/configuration/connect-to-private-database/).
+
+![Hyperdrive Private Database Architecture](https://developers.cloudflare.com/_astro/hyperdrive-private-database-architecture.BrGTjEln_2iaw6y.webp)
 
 ### Architecture Rationale
 
