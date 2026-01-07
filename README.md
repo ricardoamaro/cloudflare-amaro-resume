@@ -14,6 +14,7 @@ legacy monolith content to a modern serverless platform.
 | SSL/TLS (Full Strict) | ✓ Active |
 | WAF (AI Bot Protection) | ✓ Enabled |
 | Worker Deployment | ✓ Live |
+| Durable Objects Counter | ✓ Live |
 | Hyperdrive + Tunnel | Planned |
 
 ## Architecture
@@ -158,6 +159,32 @@ Add route configuration to `wrangler.jsonc`:
 Alternative: Dashboard → Workers → Triggers → Custom Domains
 
 This triggers automatic SSL certificate issuance and CNAME propagation.
+
+---
+
+## View Counter (Durable Objects)
+
+My resume uses **Cloudflare Durable Objects** to maintain a persistent
+view counter that survives Worker deployments and data center failures.
+
+### How I found it works
+
+1. **Counter Object** (`src/counter.js`) stores state in Durable Objects
+2. **Worker** increments counter on each page view
+3. **Persistent** — State survives Worker redeploys
+4. **No Database Needed** — Uses Cloudflare's global state system
+
+### Usage
+
+```bash
+# View current count (development)
+curl http://localhost:8787/?action=get
+
+# Reset counter (admin endpoint)
+curl http://localhost:8787/?action=reset
+```
+
+The counter is displayed in the footer as **Views: N**.
 
 ---
 

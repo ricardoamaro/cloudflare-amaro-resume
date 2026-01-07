@@ -1,9 +1,29 @@
 // MySQL client for Hyperdrive (Uncomment when Tunnel is active)
 // import mysql from 'mysql2/promise';
+import { Counter } from './counter.js';
+
+export { Counter };
 
 export default {
   async fetch(request, env, ctx) {
     let dbData;
+    let viewCount = 0;
+
+    // ---------------------------------------------------------
+    // 0. VIEW COUNTER: Durable Objects (Persistent State)
+    // ---------------------------------------------------------
+    if (env.COUNTER && request.url.includes('resume.amaro.com.pt')) {
+      try {
+        const counterId = env.COUNTER.idFromName('resume-views');
+        const counter = env.COUNTER.get(counterId);
+        const response = await counter.fetch(new Request('http://do/'));
+        const data = await response.json();
+        viewCount = data.count || 0;
+      } catch (error) {
+        console.error('Counter error:', error);
+        viewCount = 0;
+      }
+    }
 
     // ---------------------------------------------------------
     // 1. DATA LAYER: Hybrid Strategy (Hyperdrive + Tunnel)
@@ -48,7 +68,7 @@ export default {
     // ---------------------------------------------------------
     // 2. PRESENTATION LAYER: Render HTML
     // ---------------------------------------------------------
-    const html = generateResumeHTML(dbData);
+    const html = generateResumeHTML(dbData, viewCount);
 
     return new Response(html, {
       headers: { 'content-type': 'text/html' },
@@ -74,7 +94,7 @@ async function getMockData() {
 }
 
 // Template Generator (Separated for readability)
-function generateResumeHTML(dbData) {
+function generateResumeHTML(dbData, viewCount = 0) {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -315,6 +335,17 @@ function generateResumeHTML(dbData) {
         <strong>Portuguese</strong> (Native) • <strong>English</strong> (Fluent) • <strong>Spanish</strong> (Professional) • 
         <strong>French</strong> (Professional) • <strong>German</strong> (Basic)
       </p>
+
+      <!-- View Counter Demo -->
+      <div class="demo-footer" style="margin-bottom: 16px;">
+        <span class="demo-badge">View Counter</span>
+        <p>
+          <strong>Powered by:</strong> Cloudflare Durable Objects
+        </p>
+        <div class="terminal">
+          Views: ${viewCount}
+        </div>
+      </div>
 
       <!-- Architecture Demo -->
       <div class="demo-footer">
