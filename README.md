@@ -65,6 +65,11 @@ flowchart TB
 - Zero Trust policies restrict tunnel access to Hyperdrive service tokens
 - WAF blocks known AI scraper user agents at the edge
 
+**Why this stack?** I treated this project as an adventure in "dogfooding" the
+modern edge stack. Instead of spinning up a VPS or a container, I wanted to see
+if I could replicate a full tech stack (Compute, Security, State, database coding)
+entirely using Cloudflare's primitives.
+
 ---
 
 ## Implementation
@@ -78,6 +83,11 @@ Primary NS:   jonah.ns.cloudflare.com
 Secondary NS: lola.ns.cloudflare.com
 ```
 
+**The Entry Point:** Everything starts with DNS. By moving the nameservers to
+Cloudflare, I wasn't just managing records; I was putting the entire site behind
+their global network. It's the prerequisite that unlocks SSL, Caching, and
+Security features instantly.
+
 Configuration:
 
 - SSL mode set to `Full (Strict)` to prevent redirect loops with origin
@@ -88,6 +98,11 @@ Configuration:
 
 Implemented a **Defense-in-Depth** strategy to prevent unauthorized LLM
 training on personal research data, utilizing Cloudflare's Bot controls.
+
+**The AI Invasion:** As I analyzed my logs, I realized my personal data was being
+scraped by LLMs. I used **WAF** and **Bot Management** to turn the edge network
+into a shield. Instead of handling these requests in my application code (and
+paying for the CPU cycles), Cloudflare drops them at the network edge.
 
 #### 1. Managed Protection (Layer 7)
 
@@ -136,6 +151,11 @@ wrangler login
 npm create cloudflare@latest amaro-resume
 ```
 
+**Global Compute:** **Cloudflare Workers** are the heart of this setup. Unlike
+traditional Lambda functions or containers, they run on V8 Isolates. This means
+0ms cold starts. It felt like deploying code to hundreds of data centers
+simultaneously with a single command.
+
 The Worker (`src/index.js`) implements a layered architecture:
 
 - **Data Layer:** Hybrid strategy supporting both Hyperdrive (production)
@@ -167,6 +187,12 @@ This triggers automatic SSL certificate issuance and CNAME propagation.
 My resume uses **Cloudflare Durable Objects** to maintain a persistent
 view counter that survives Worker deployments and data center failures.
 
+**State in a Stateless World:** Serverless is great, but where do you store the
+numbers? I didn't want to spin up a SQL server just for a hit counter. **Durable
+Objects** provided the answer: strongly consistent storage attached to a specific
+class. It's like having a tiny, dedicated server that pops into existence just
+to count hits and then sleeps.
+
 ### How I found it works
 
 1. **Counter Object** (`src/counter.js`) stores state in Durable Objects
@@ -191,6 +217,16 @@ The counter is displayed in the footer as **Views: N**.
 ## Hyperdrive + Tunnel Setup (Optional)
 
 Securely connect to a private MySQL database without exposing it to the internet.
+
+**Bridging the Gap:** My Drupal database lives in a private network in Lisbon.
+Exposing port 3306 to the internet is a security nightmare.
+
+- **Cloudflare Tunnel** creates a secure outbound connection, so no firewall
+  ports needed opening.
+- **Hyperdrive** solves the physics problem. Connecting to a database across
+  the ocean is slow. Hyperdrive maintains a connection pool and caches the
+  results globally, making my legacy database feel like it's running next to
+  the user.
 
 ### 1. Create Cloudflare Tunnel
 
