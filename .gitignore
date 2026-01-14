@@ -167,3 +167,10 @@ dist
 !.env.example
 .wrangler/
 worker-configuration.d.ts
+
+
+*.sql
+*.sqlite
+*.gz
+db_data/
+
