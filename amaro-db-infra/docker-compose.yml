@@ -18,10 +18,11 @@ services:
   # 2. The Tunnel
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflare_tunnel
-    restart: always
-    # We pass the token via the command line using the variable
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    container_name: cloudflared
+    restart: unless-stopped
+    volumes:
+      - ./.cloudflared:/home/nonroot/.cloudflared
+    command: tunnel --config /home/nonroot/.cloudflared/config.yml run
     networks:
       - tunnel-net
     depends_on:

@@ -7,6 +7,9 @@
 	"name": "amaro-resume",
 	"main": "src/index.js",
 	"compatibility_date": "2025-12-17",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"observability": {
 		"enabled": true
 	},
@@ -28,6 +31,12 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["Counter"]
+		}
+	],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "aaabc87b5375457699c3a925719692c6"
 		}
 	]
 }

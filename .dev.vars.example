@@ -1,0 +1,7 @@
+# Local Development Secrets Template
+# Copy this to .dev.vars and fill in your actual values
+# DO NOT commit .dev.vars to git
+
+# Hyperdrive Local Connection String
+# Format: mysql://[user]:[password]@[host]:[port]/[database]
+HYPERDRIVE_CONNECTION_STRING=mysql://drupal_user:YourPasswordHere@127.0.0.1:3306/drupal_db

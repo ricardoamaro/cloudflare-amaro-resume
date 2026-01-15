@@ -1,99 +1,230 @@
-// MySQL client for Hyperdrive (Uncomment when Tunnel is active)
-// import mysql from 'mysql2/promise';
+/**
+ * Ricardo Amaro's Resume - Cloudflare Worker
+ * 
+ * Architecture: Worker → Hyperdrive → Tunnel → Private MySQL (Drupal)
+ * 
+ * Features:
+ * - Live database queries via Cloudflare Hyperdrive
+ * - Persistent view counter via Durable Objects
+ * - Graceful fallback to mock data when database unavailable
+ */
+
 import { Counter } from './counter.js';
 
 export { Counter };
 
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+const CONFIG = {
+  RESUME_DOMAIN: 'resume.amaro.com.pt',
+  MOCK_LATENCY_MS: 15,
+  DEFAULT_LATENCY: '18ms',
+};
+
+const QUERIES = {
+  // Count all node types like pages, basic content, etc
+  NODE_COUNT: 'SELECT COUNT(nid) as total FROM node_field_data WHERE status = 1',
+  // Get the most recently created/published article (ordered by created timestamp DESC)
+  LATEST_TITLE: 'SELECT title FROM node_field_data WHERE status = 1 AND type = "article" ORDER BY created DESC LIMIT 1',
+  DB_VERSION: 'SELECT VERSION() as version',
+};
+
+// ============================================================
+// MAIN HANDLER
+// ============================================================
+
 export default {
   async fetch(request, env, ctx) {
-    let dbData;
-    let viewCount = 0;
+    const viewCount = await getViewCount(request, env);
+    const dbData = await getDatabaseData(env, ctx);
 
-    // ---------------------------------------------------------
-    // 0. VIEW COUNTER: Durable Objects (Persistent State)
-    // ---------------------------------------------------------
-    if (env.COUNTER && request.url.includes('resume.amaro.com.pt')) {
-      try {
-        const counterId = env.COUNTER.idFromName('resume-views');
-        const counter = env.COUNTER.get(counterId);
-        const response = await counter.fetch(new Request('http://do/'));
-        const data = await response.json();
-        viewCount = data.count || 0;
-      } catch (error) {
-        console.error('Counter error:', error);
-        viewCount = 0;
-      }
-    }
-
-    // ---------------------------------------------------------
-    // 1. DATA LAYER: Hybrid Strategy (Hyperdrive + Tunnel)
-    // ---------------------------------------------------------
-    
-    // Check if Hyperdrive binding exists (Production environment)
-    if (env.HYPERDRIVE) {
-      try {
-        // PRODUCTION: Connect via Hyperdrive -> Cloudflare Tunnel -> Private DB
-        // const connection = await mysql.createConnection(env.HYPERDRIVE.connectionString);
-        
-        // const [nodes] = await connection.execute(
-        //   `SELECT COUNT(nid) as total FROM node_field_data WHERE status = 1`
-        // );
-        // const [latest] = await connection.execute(
-        //   `SELECT title FROM node_field_data WHERE status = 1 ORDER BY created DESC LIMIT 1`
-        // );
-        // const [version] = await connection.execute(`SELECT VERSION() as version`);
-        // 
-        // dbData = {
-        //   status: "Online (Tunnel)",
-        //   latency: "18ms", // Hyperdrive caching makes this fast
-        //   total_nodes: nodes[0].total,
-        //   featured_article: latest[0].title,
-        //   db_version: version[0].version,
-        //   source: "Hyperdrive → Tunnel → MySQL"
-        // };
-        // await connection.end();
-
-        // Fallback for Demo purposes (if Tunnel isn't active yet)
-        dbData = await getMockData();
-
-      } catch (error) {
-        console.error('Database error:', error);
-        dbData = { status: "Error", error: error.message };
-      }
-    } else {
-      // DEVELOPMENT: Use Mock Data
-      dbData = await getMockData();
-    }
-
-    // ---------------------------------------------------------
-    // 2. PRESENTATION LAYER: Render HTML
-    // ---------------------------------------------------------
-    const html = generateResumeHTML(dbData, viewCount);
-
-    return new Response(html, {
+    return new Response(generateResumeHTML(dbData, viewCount), {
       headers: { 'content-type': 'text/html' },
     });
   },
 };
 
-// ---------------------------------------------------------
-// HELPER FUNCTIONS
-// ---------------------------------------------------------
+// ============================================================
+// DATA LAYER
+// ============================================================
 
-// Mock data for development/demo
+/**
+ * Get view count from Durable Objects
+ * @param {Request} request
+ * @param {object} env - Worker environment bindings
+ * @returns {Promise<number>}
+ */
+async function getViewCount(request, env) {
+  if (!env.COUNTER || !request.url.includes(CONFIG.RESUME_DOMAIN)) {
+    return 0;
+  }
+
+  try {
+    const counterId = env.COUNTER.idFromName('resume-views');
+    const counter = env.COUNTER.get(counterId);
+    const response = await counter.fetch(new Request('http://do/'));
+    const data = await response.json();
+    return data.count || 0;
+  } catch (error) {
+    console.error('Counter error:', error);
+    return 0;
+  }
+}
+
+/**
+ * Fetch data from database via Hyperdrive, or return mock data
+ * @param {object} env - Worker environment bindings
+ * @param {ExecutionContext} ctx - Execution context for background tasks
+ * @returns {Promise<object>}
+ */
+async function getDatabaseData(env, ctx) {
+  if (!env.HYPERDRIVE) {
+    console.log('No Hyperdrive binding - using mock data');
+    return getMockData();
+  }
+
+  try {
+    return await queryDatabase(env, ctx);
+  } catch (error) {
+    console.error('Database error:', error?.message || String(error));
+    console.log('Falling back to mock data');
+    return getMockData();
+  }
+}
+
+/**
+ * Execute queries against MySQL via Hyperdrive
+ * 
+ * IMPORTANT: Cloudflare Workers have a unique execution model where connections
+ * cannot be safely reused across requests. Creating a new connection per request
+ * prevents hanging issues and connection pool corruption.
+ * 
+ * Requirements:
+ * - mysql2 v3.13.0+ for Cloudflare Workers compatibility
+ * - disableEval: true to prevent "Code generation from strings" error
+ * - Use .query() not .execute() (Hyperdrive doesn't support prepared statements)
+ * - Always disconnect after use to prevent connection pool issues
+ * 
+ * @param {object} env - Worker environment bindings
+ * @param {ExecutionContext} ctx - Execution context for cleanup
+ * @returns {Promise<object>}
+ */
+async function queryDatabase(env, ctx) {
+  console.log('Attempting Hyperdrive connection...');
+
+  const mysql = await import('mysql2/promise');
+
+  let connection;
+  try {
+    // Create a new connection for this request with connection timeout
+    connection = await Promise.race([
+      mysql.createConnection({
+        host: env.HYPERDRIVE.host,
+        user: env.HYPERDRIVE.user,
+        password: env.HYPERDRIVE.password,
+        database: env.HYPERDRIVE.database,
+        port: env.HYPERDRIVE.port,
+        disableEval: true, // Required for Cloudflare Workers
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 6000)
+      ),
+    ]);
+
+    console.log('Connected to Hyperdrive via mysql2');
+
+    // Run all queries in parallel with individual timeouts to prevent blocking
+    const queryPromises = [
+      Promise.race([
+        connection.query(QUERIES.NODE_COUNT),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('NODE_COUNT timeout')), 8000)
+        ),
+      ]),
+      Promise.race([
+        connection.query(QUERIES.LATEST_TITLE),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('LATEST_TITLE timeout')), 8000)
+        ),
+      ]),
+      Promise.race([
+        connection.query(QUERIES.DB_VERSION),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('DB_VERSION timeout')), 8000)
+        ),
+      ]),
+    ];
+
+    let results;
+    try {
+      results = await Promise.all(queryPromises);
+    } catch (queryError) {
+      console.warn('Some queries failed:', queryError?.message);
+      // Fall through to use defaults below
+      results = [[{ total: 0 }], [{ title: 'N/A' }], [{ version: 'N/A' }]];
+    }
+
+    const [nodesResult] = results[0] || [{ total: 0 }];
+    const [latestResult] = results[1] || [{ title: 'N/A' }];
+    const [versionResult] = results[2] || [{ version: 'N/A' }];
+
+    const dbData = {
+      status: 'Online (Tunnel)',
+      latency: CONFIG.DEFAULT_LATENCY,
+      total_nodes: nodesResult?.[0]?.total || 0,
+      featured_article: latestResult?.[0]?.title || 'N/A',
+      db_version: versionResult?.[0]?.version || 'N/A',
+      source: 'Hyperdrive → Tunnel → MySQL',
+    };
+
+    console.log('Database query successful:', dbData);
+    return dbData;
+  } catch (error) {
+    console.error('Database connection error:', error?.message);
+    throw error;
+  } finally {
+    // Always disconnect with timeout protection
+    if (connection) {
+      try {
+        await Promise.race([
+          connection.end(),
+          new Promise(resolve => setTimeout(resolve, 2000)),
+        ]);
+      } catch (err) {
+        console.error('Error closing connection:', err?.message);
+      }
+    }
+  }
+}
+
+/**
+ * Mock data for development or when database is unavailable
+ * @returns {Promise<object>}
+ */
 async function getMockData() {
-  await new Promise(r => setTimeout(r, 15)); // Simulate network latency
+  await new Promise(r => setTimeout(r, CONFIG.MOCK_LATENCY_MS));
   return {
-    status: "Online",
-    latency: "~15ms",
+    status: 'Online',
+    latency: `~${CONFIG.MOCK_LATENCY_MS}ms`,
     total_nodes: 153,
-    featured_article: "The Journey to Achieve Successful DevOps Adoption in IT Organizations",
-    db_version: "10.6.22-MariaDB",
-    source: "Mock (Tunnel not configured)"
+    featured_article: 'The Journey to Achieve Successful DevOps Adoption in IT Organizations',
+    db_version: '10.6.22-MariaDB',
+    source: 'Mock (Tunnel not configured)',
   };
 }
 
-// Template Generator (Separated for readability)
+// ============================================================
+// PRESENTATION LAYER
+// ============================================================
+
+/**
+ * Generate the resume HTML page
+ * @param {object} dbData - Database statistics
+ * @param {number} viewCount - Page view count
+ * @returns {string} - HTML string
+ */
 function generateResumeHTML(dbData, viewCount = 0) {
   return `
     <!DOCTYPE html>
