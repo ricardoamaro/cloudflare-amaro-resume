@@ -15,7 +15,7 @@ legacy monolith content to a modern serverless platform.
 | WAF (AI Bot Protection) | ✓ Enabled |
 | Worker Deployment | ✓ Live |
 | Durable Objects Counter | ✓ Live |
-| Hyperdrive + Tunnel | Planned |
+| Hyperdrive + Tunnel | ✓ Active |
 
 ## Architecture
 
@@ -179,6 +179,28 @@ Add route configuration to `wrangler.jsonc`:
 Alternative: Dashboard → Workers → Triggers → Custom Domains
 
 This triggers automatic SSL certificate issuance and CNAME propagation.
+
+### Phase 5: Hyperdrive + Tunnel (Active)
+
+This project uses **Cloudflare Hyperdrive** + **cloudflared Tunnel** to
+connect the Worker to a private MariaDB instance without exposing the
+database publicly.
+
+- Production: set an encrypted secret on Cloudflare and reference it from
+  `env` in the Worker. Example:
+
+  - Create the secret (deploys a new Worker version):
+
+    npx wrangler secret put HYPERDRIVE_CONNECTION_STRING
+
+  - The Worker can read the connection string via `env.HYPERDRIVE_CONNECTION_STRING`.
+
+- Local development: use a local `.dev.vars` file (do NOT commit) or
+  `.env` formatted files. A template `.dev.vars.example` is provided—copy
+  it to `.dev.vars` and fill in your credentials for local testing.
+
+Security note: never commit secrets to `wrangler.jsonc` or the repository.
+Use `wrangler secret put` for production and `.dev.vars` for local testing.
 
 ---
 
